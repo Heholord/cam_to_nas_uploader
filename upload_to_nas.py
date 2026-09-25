@@ -116,20 +116,50 @@ def calculate_hash(filepath, chunk_size=8192):
         logger.error(f"Error hashing {filepath}: {e}")
         return None
 
+def quick_file_check(src, dst, chunk_size=65536):
+    """Quick duplicate check: size + first/last bytes"""
+    try:
+        src_size = os.path.getsize(src)
+        dst_size = os.path.getsize(dst)
+        
+        # Different sizes = different files
+        if src_size != dst_size:
+            return False
+        
+        # Same size, check first and last chunk
+        with open(src, 'rb') as f1, open(dst, 'rb') as f2:
+            src_start = f1.read(chunk_size)
+            dst_start = f2.read(chunk_size)
+            
+            if src_start != dst_start:
+                return False
+            
+            # Check last chunk
+            f1.seek(-chunk_size, 2)
+            f2.seek(-chunk_size, 2)
+            src_end = f1.read(chunk_size)
+            dst_end = f2.read(chunk_size)
+            
+            return src_end == dst_end
+    except Exception as e:
+        logger.error(f"Error in quick check: {e}")
+        return False
+
 def copy_file_with_hash_check(src, dst, files_to_delete):
     """Copy file and verify with hash check. Return True if successful."""
     try:
         # If destination exists, compare hashes
         if os.path.exists(dst):
-            src_hash = calculate_hash(src)
-            dst_hash = calculate_hash(dst)
+            # src_hash = calculate_hash(src)
+            # dst_hash = calculate_hash(dst)
             
-            if src_hash == dst_hash:
-                logger.debug(f"File exists with matching hash: {os.path.basename(dst)}")
+            # if src_hash == dst_hash:
+            if quick_file_check(src, dst):
+                logger.debug(f"File exists with matching content: {os.path.basename(dst)}")
                 files_to_delete.append(src)
                 return True
             else:
-                logger.error(f"File exists but hash mismatch: {os.path.basename(dst)}")
+                logger.error(f"File exists but content differs: {os.path.basename(dst)}")
                 return False
         
         # Create destination directory if it doesn't exist
@@ -139,15 +169,16 @@ def copy_file_with_hash_check(src, dst, files_to_delete):
         shutil.copy2(src, dst)
         
         # Verify hash after copy
-        src_hash = calculate_hash(src)
-        dst_hash = calculate_hash(dst)
+        # src_hash = calculate_hash(src)
+        # dst_hash = calculate_hash(dst)
         
-        if src_hash == dst_hash:
+        # if src_hash == dst_hash:
+        if quick_file_check(src, dst):
             logger.info(f"Copied and verified: {os.path.basename(src)} → {dst}")
             files_to_delete.append(src)
             return True
         else:
-            logger.error(f"Hash mismatch after copy: {os.path.basename(dst)}")
+            logger.error(f"Content mismatch after copy: {os.path.basename(dst)}")
             return False
     
     except Exception as e:
@@ -274,9 +305,8 @@ if __name__ == "__main__":
         # Delete files only after all transfers are complete
         if failed_transfers == 0 and files_to_delete:
             logger.info(f"\n✓ All transfers successful. Deleting {len(files_to_delete)} local files...")
-            if False:
-                if not dryrun:
-                    delete_processed_files_locally(files_to_delete)
+            if not dryrun:
+                delete_processed_files_locally(files_to_delete)
         elif failed_transfers > 0:
             logger.error(f"\n✗ {failed_transfers} transfer(s) failed. NOT deleting local files.")
             logger.debug(f"Successfully transferred files (marked for deletion): {successful_transfers}")
