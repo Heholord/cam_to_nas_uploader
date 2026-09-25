@@ -51,7 +51,7 @@ logger = setup_logger()
 def add_date_to_jpg(filename, folder_path):
     # Skip if already in YYYY-MM-DD format
     if date_pattern.match(filename):
-        logger.info(f"Skipping {filename} (already in date format)")
+        logger.debug(f"Skipping {filename} (already in date format)")
         return
 
     filepath = os.path.join(folder_path, filename)
@@ -91,7 +91,7 @@ def add_date_to_jpg(filename, folder_path):
                 
                 if not dryrun: 
                     os.rename(filepath, new_filepath)
-                    logger.info(f"Renamed: {filename} → {os.path.basename(new_filepath)}")
+                logger.info(f"Renamed: {filename} → {os.path.basename(new_filepath)}")
             else:
                 logger.error(f"No date found in {filename}")
         else:
@@ -170,13 +170,16 @@ def collect_jpg_and_raw_files():
         
         if filename.lower().endswith(".jpg"):
             # Extract date from filename (assumes YYYY-MM-DD.jpg format)
-            try:
-                date_str = filename.split("_")[0]  # Gets YYYY-MM-DD
-                year = date_str.split("-")[0]
-                jpg_files[base_name] = (filepath, filename, date_str, year)
-            except:
-                logger.error(f"Could not extract date from {filename}")
-        
+            if date_pattern.match(filename):
+                try:
+                    date_str = filename.split("_")[0]  # Gets YYYY-MM-DD
+                    year = date_str.split("-")[0]
+                    jpg_files[base_name] = (filepath, filename, date_str, year)
+                except:
+                    logger.error(f"Could not extract date from {filename}")
+            else:
+                logger.error(f"{filename} is not in the correct naming format")
+    
         elif filename.lower().endswith(".arw"):
             arw_files[base_name] = (filepath, filename)
     
@@ -196,6 +199,12 @@ def copy_images(jpg_files, arw_files):
     
     # Process JPG files
     for base_name, (src_jpg, jpg_name, date_str, year) in jpg_files.items():
+        logger.debug(f"Processing: {base_name}")
+        
+        # Extract the suffix (everything after the date and underscore)
+        # e.g., from "2026-09-25_DSC00001" extract "DSC00001"
+        suffix = base_name.split("_", 1)[1] if "_" in base_name else base_name
+        
         # Build destination path
         sony_folder = f"{TIMELINE_BASE}/{year}/Sony"
         dst_jpg = f"{sony_folder}/{jpg_name}"
@@ -213,8 +222,8 @@ def copy_images(jpg_files, arw_files):
             successful_transfers += 1
             
             # If JPG copied successfully, also copy matching ARW
-            if base_name in arw_files:
-                src_arw, arw_name = arw_files[base_name]
+            if suffix in arw_files:
+                src_arw, arw_name = arw_files[suffix]
                 raw_folder = f"{TIMELINE_BASE}/{year}/Sony/raw"
                 dst_arw = f"{raw_folder}/{arw_name}"
                 
@@ -231,9 +240,11 @@ def copy_images(jpg_files, arw_files):
                     successful_transfers += 1
                 else:
                     failed_transfers += 1
+            else:
+                logger.warning(f"No matching ARW found for {suffix}")
         else:
             failed_transfers += 1
-
+    
     return (files_to_delete, failed_transfers, successful_transfers)
 
 
@@ -263,8 +274,9 @@ if __name__ == "__main__":
         # Delete files only after all transfers are complete
         if failed_transfers == 0 and files_to_delete:
             logger.info(f"\n✓ All transfers successful. Deleting {len(files_to_delete)} local files...")
-            if not dryrun or False:
-                delete_processed_files_locally(files_to_delete)
+            if False:
+                if not dryrun:
+                    delete_processed_files_locally(files_to_delete)
         elif failed_transfers > 0:
             logger.error(f"\n✗ {failed_transfers} transfer(s) failed. NOT deleting local files.")
             logger.debug(f"Successfully transferred files (marked for deletion): {successful_transfers}")
