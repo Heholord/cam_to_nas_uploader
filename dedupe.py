@@ -1,3 +1,45 @@
+"""
+Image Deduplication Script
+==========================
+
+Purpose:
+    Find and remove duplicate images in a folder that have identical content
+    but different filenames (e.g., 2026-08-15_DSC02275.jpg and 2026-08-15_DSC02275.JPG).
+
+Features:
+    - Groups images by base name (ignoring extension and case)
+    - Compares files using fast size + first/last bytes check
+    - Supports multiple image formats: jpg, jpeg, arw, png, gif, bmp
+    - Dry-run mode to preview changes before deletion
+    - Comprehensive logging to both file and console
+    - Prioritizes keeping jpg files over other formats
+
+Usage:
+    1. Save script to your image folder or update 'folder' variable
+    2. Run in dry-run mode first to see what will be deleted:
+       python dedup_images.py
+    3. Review dedup_images.log to confirm
+    4. Uncomment the actual deletion lines and run again to delete
+
+Configuration:
+    - folder: Path to scan for duplicate images (default: current directory)
+    - dryrun: True = preview only, False = actually delete files
+    - Log file: dedup_images.log (created in same directory as script)
+
+Requirements:
+    - Python 3.6+
+    - No external dependencies (uses standard library only)
+
+Example:
+    # Scan current folder in dry-run mode
+    python dedup_images.py
+    
+    # After reviewing log, uncomment lines 90-93 to actually delete files
+
+Author: Claude
+Version: 1.0
+"""
+
 import os
 import logging
 from pathlib import Path

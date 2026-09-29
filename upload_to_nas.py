@@ -1,3 +1,93 @@
+"""
+Photo Transfer & Organization Script
+=====================================
+
+Purpose:
+    Organize photos from a local folder to a media library with the following workflow:
+    1. Add date prefix (YYYY-MM-DD) to JPG files based on EXIF metadata
+    2. Copy dated JPGs and matching RAW files to organized media structure
+    3. Verify transfers with content-based duplicate detection
+    4. Delete local files only after successful transfer
+
+File Structure:
+    Input: Flat folder with mixed JPG/ARW files (e.g., DSC00001.JPG, DSC00001.ARW)
+    Output: /media/manuel/Media/Pictures/TimeLine/{YEAR}/Sony/
+            - JPG files: {YYYY-MM-DD}_{original_name}.jpg
+            - ARW files: /raw/{original_name}.arw
+
+Features:
+    - Automatic EXIF date extraction and filename prefixing
+    - Smart file matching (JPGs with ARWs by base filename)
+    - Fast content verification using size + first/last bytes
+    - Dry-run mode for safe preview
+    - Auto-creates year/Sony/raw folder structure
+    - Comprehensive logging to file and console
+    - Prevents duplicate transfers and data loss
+
+Usage:
+    1. Update SOURCE_FOLDER to your image location
+    2. Set dryrun = True (default) to preview
+    3. Run: python photo_transfer.py
+    4. Review photo_transfer.log for results
+    5. If successful, set dryrun = False and run again to actually delete
+
+Configuration:
+    - MEDIA_PATH: Base path to mounted media drive
+    - TIMELINE_BASE: Subfolder structure on media drive
+    - SOURCE_FOLDER: Local folder containing photos to transfer
+    - dryrun: True = preview only, False = actually delete files
+    - Log file: photo_transfer.log (created in script directory)
+
+Requirements:
+    - Python 3.6+
+    - Pillow library: pip install pillow
+    - /media/manuel/Media must be mounted
+    - Sufficient disk space on media drive
+
+Workflow Details:
+    Step 1: Date Prefix Phase
+        - Scans all JPG files
+        - Reads EXIF DateTimeOriginal tag
+        - Renames to YYYY-MM-DD_{original_name}.jpg
+        - Skips files already in correct format
+    
+    Step 2: Verification Phase
+        - Confirms media drive is mounted
+        - Groups JPGs with matching ARWs by base filename
+        - Extracts year from date prefix
+    
+    Step 3: Transfer Phase
+        - Creates /media/manuel/Media/Pictures/TimeLine/{YEAR}/Sony/ structure
+        - Copies JPGs to Sony folder
+        - Copies matching ARWs to Sony/raw folder
+        - Verifies content after each copy
+    
+    Step 4: Cleanup Phase
+        - Only deletes if ALL transfers succeeded
+        - Aborts deletion if any transfer failed
+        - Detailed log of what was deleted
+
+Example Session:
+    # First run (dry-run mode)
+    $ python photo_transfer.py
+    # Check photo_transfer.log
+    # Should see: "Found 150 JPG files and 150 ARW files"
+    
+    # After review, set dryrun = False and run again
+    $ python photo_transfer.py
+    # Actual deletion occurs
+
+Log Levels:
+    - DEBUG: Detailed info (folder creation, pattern matching)
+    - INFO: Major actions (files renamed, copied, deleted)
+    - WARNING: Potential issues (missing ARW, existing files)
+    - ERROR: Failed operations (EXIF errors, copy failures)
+
+Author: Claude
+Version: 1.0
+Last Updated: 2026-09-29
+"""
+
 from PIL import Image
 from PIL.ExifTags import TAGS
 import os
