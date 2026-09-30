@@ -24,6 +24,7 @@ extensions = [
     'sphinx.ext.autodoc',      # Auto-generate from docstrings
     'sphinx.ext.napoleon',     # Support Google/NumPy style docstrings
     'sphinx.ext.viewcode',     # Link to source code
+#    'sphinx_readme',
 ]
 
 templates_path = ['_templates']

@@ -10,6 +10,11 @@ build:
   tools:
     python: "3.13"
 
+python:
+  install:
+    - requirements: requirements.txt # Root requirements
+    - requirements: docs/requirements.txt # Docs requirements
+
 sphinx:
   # Path to your Sphinx configuration file.
   configuration: docs/conf.py
