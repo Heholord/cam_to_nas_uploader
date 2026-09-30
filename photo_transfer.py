@@ -12,8 +12,8 @@ Purpose:
 File Structure:
     Input: Flat folder with mixed JPG/ARW files (e.g., DSC00001.JPG, DSC00001.ARW)
     Output: /media/manuel/Media/Pictures/TimeLine/{YEAR}/Sony/
-            - JPG files: {YYYY-MM-DD}_{original_name}.jpg
-            - ARW files: /raw/{original_name}.arw
+        - JPG files: {YYYY-MM-DD}_{original_name}.jpg
+        - ARW files: /raw/{original_name}.arw
 
 Features:
     - Automatic EXIF date extraction and filename prefixing
@@ -83,7 +83,7 @@ Log Levels:
     - WARNING: Potential issues (missing ARW, existing files)
     - ERROR: Failed operations (EXIF errors, copy failures)
 
-Author: Claude
+Author: Manuel Esberger (with help from Claude)
 Version: 1.0
 Last Updated: 2026-09-29
 """
@@ -139,6 +139,137 @@ logger = setup_logger()
 
 
 def add_date_to_jpg(filename, folder_path):
+    """
+    Add EXIF date prefix to JPG filename.
+    
+    Extracts the DateTimeOriginal from JPG EXIF metadata and prepends it
+    to the filename in YYYY-MM-DD format. This standardizes photo naming
+    for organization and sorting purposes.
+    
+    Filename transformation:
+        - Input:  DSC00001.jpg
+        - Output: 2026-09-25_DSC00001.jpg
+    
+    If a file with the target name already exists, appends a counter:
+        - 2026-09-25_DSC00001.jpg
+        - 2026-09-25_DSC00001_1.jpg (if first name exists)
+    
+    Parameters
+    ----------
+    filename : str
+        Name of the JPG file to process (e.g., "DSC00001.jpg").
+        Case-insensitive for .jpg extension.
+    folder_path : str
+        Absolute or relative path to folder containing the file.
+        Example: ".", "/home/user/photos", "/media/storage"
+    
+    Returns
+    -------
+    None
+        Function performs in-place file renaming. No return value.
+        Results are logged to logger.
+    
+    Raises
+    ------
+    None
+        No exceptions are raised. All errors are caught and logged:
+        
+        - FileNotFoundError: File not found (logged as error)
+        - PIL.UnidentifiedImageError: Not a valid image (logged as error)
+        - OSError: Permission denied (logged as error)
+        - KeyError: EXIF tag missing (logged as error)
+    
+    Notes
+    -----
+    - **Skips already-dated files**: Detects YYYY-MM-DD prefix and skips
+    - **EXIF tag 36867**: DateTimeOriginal in format "YYYY:MM:DD HH:MM:SS"
+    - **Dry-run mode**: Respects global `dryrun` variable
+    - **In-place rename**: Uses os.rename() if not in dry-run mode
+    - **No backup**: Original file is not backed up before renaming
+    - **Requires Pillow**: Depends on PIL.Image for EXIF extraction
+    
+    Workflow
+    --------
+    1. Check if filename already has YYYY-MM-DD prefix → skip if yes
+    2. Open JPG file with Pillow
+    3. Extract EXIF data from image
+    4. Find DateTimeOriginal tag (tag ID 36867)
+    5. Parse date string: "2026:09:25 14:30:45" → "2026-09-25"
+    6. Generate new filename: "{date}_{original_name}.jpg"
+    7. Handle duplicates by appending counter (_1, _2, etc.)
+    8. Rename file (or log dry-run result)
+    
+    Examples
+    --------
+    Single file:
+    
+    >>> add_date_to_jpg("DSC00001.jpg", ".")
+    INFO - Renamed: DSC00001.jpg → 2026-09-25_DSC00001.jpg
+    
+    File already dated (skipped):
+    
+    >>> add_date_to_jpg("2026-09-25_DSC00001.jpg", ".")
+    DEBUG - Skipping 2026-09-25_DSC00001.jpg (already in date format)
+    
+    Duplicate handling:
+    
+    >>> # File 2026-09-25_DSC00001.jpg already exists
+    >>> add_date_to_jpg("DSC00001.jpg", ".")
+    INFO - Renamed: DSC00001.jpg → 2026-09-25_DSC00001_1.jpg
+    
+    Batch processing:
+    
+    >>> for filename in os.listdir("."):
+    ...     if filename.lower().endswith(".jpg"):
+    ...         add_date_to_jpg(filename, ".")
+    
+    Error case - no EXIF data:
+    
+    >>> add_date_to_jpg("photo_no_exif.jpg", ".")
+    ERROR - No EXIF data in photo_no_exif.jpg
+    
+    Dry-run mode:
+    
+    >>> dryrun = True
+    >>> add_date_to_jpg("DSC00001.jpg", ".")
+    DEBUG - [DRY RUN] Would rename: DSC00001.jpg → 2026-09-25_DSC00001.jpg
+    # File is NOT actually renamed
+    
+    Common Issues & Solutions
+    -------------------------
+    
+    **No EXIF data in file**
+    
+    - Some JPGs lack EXIF metadata (screenshots, heavily edited photos)
+    - Photos from certain cameras/phone apps may strip EXIF
+    - Solution: Add date manually or use file modification time
+    
+    **File already exists**
+    
+    - Multiple photos taken at same time with same camera
+    - Counter automatically appended (_1, _2, etc.)
+    - Solution: Review duplicates, delete if not needed
+    
+    **Permission denied**
+    
+    - Insufficient write permissions on folder
+    - File locked by another application
+    - Solution: Check folder permissions, close photo viewer
+    
+    See Also
+    --------
+    collect_jpg_and_raw_files : Collect dated JPGs for transfer
+    copy_images : Transfer dated JPGs to media library
+    photo_transfer.py : Full workflow using this function
+    
+    References
+    ----------
+    - EXIF Tag 36867: DateTimeOriginal (capture time, user-settable)
+    - EXIF Tag 36868: DateTimeDigitized (digitization time)
+    - EXIF specification: https://en.wikipedia.org/wiki/Exif
+    - Pillow documentation: https://pillow.readthedocs.io/
+    """
+
     # Skip if already in YYYY-MM-DD format
     if date_pattern.match(filename):
         logger.debug(f"Skipping {filename} (already in date format)")
@@ -236,7 +367,62 @@ def quick_file_check(src, dst, chunk_size=65536):
         return False
 
 def copy_file_with_hash_check(src, dst, files_to_delete):
-    """Copy file and verify with hash check. Return True if successful."""
+    """
+    Copy a file with verification and duplicate detection.
+    
+    Copies a single file from source to destination with content verification
+    using fast size + first/last bytes comparison. If destination exists,
+    compares content before copying. Files are only marked for deletion if
+    verification passes.
+    
+    Parameters
+    ----------
+    src : str
+        Absolute path to source file
+    dst : str
+        Absolute path to destination file
+    files_to_delete : list
+        List to append file paths to (modified in-place). Files are added
+        only if copy and verification succeed.
+    
+    Returns
+    -------
+    bool
+        True if file was successfully copied and verified, or if existing
+        file matches content. False if copy failed or content differs.
+    
+    Raises
+    ------
+    None
+        All exceptions are caught and logged. Function returns False on error.
+    
+    Notes
+    -----
+    - Uses quick_file_check() for verification (size + first/last bytes)
+    - Creates destination directories automatically
+    - Preserves file metadata with shutil.copy2()
+    - If destination exists and matches, marks src for deletion
+    - If destination exists and differs, logs error and returns False
+    
+    Examples
+    --------
+    >>> files_to_delete = []
+    >>> success = copy_file_with_hash_check(
+    ...     '/local/photo.jpg',
+    ...     '/media/photo.jpg',
+    ...     files_to_delete
+    ... )
+    >>> if success:
+    ...     print("File copied and verified")
+    >>> print(files_to_delete)
+    ['/local/photo.jpg']
+    
+    See Also
+    --------
+    quick_file_check : Fast duplicate detection
+    copy_images : Batch copy multiple files
+    """
+
     try:
         # If destination exists, compare hashes
         if os.path.exists(dst):
@@ -277,7 +463,57 @@ def copy_file_with_hash_check(src, dst, files_to_delete):
 
 
 def collect_jpg_and_raw_files():
-    # Collect files to process
+    """
+    Collect and organize JPG and ARW files from source folder.
+    
+    Scans the SOURCE_FOLDER for JPG and ARW files, extracts date information
+    from JPG filenames, and groups them by base name for later processing.
+    
+    JPG files must be in YYYY-MM-DD_{suffix} format (typically created by
+    add_date_to_jpg function). ARW files should have matching base names
+    without the date prefix.
+    
+    Returns
+    -------
+    tuple or None
+        A tuple of (jpg_files, arw_files) where:
+        
+        - **jpg_files** (dict): Maps base_name to (filepath, filename, date_str, year)
+            - Example: {'2026-09-25_DSC00001': ('/path/to/2026-09-25_DSC00001.jpg', 
+              '2026-09-25_DSC00001.jpg', '2026-09-25', '2026')}
+        
+        - **arw_files** (dict): Maps base_name to (filepath, filename)
+            - Example: {'DSC00001': ('/path/to/DSC00001.arw', 'DSC00001.arw')}
+        
+        Returns None if no JPG files are found.
+    
+    Raises
+    ------
+    None
+        Errors are logged but do not raise exceptions. Failed extractions
+        are logged as errors and skipped.
+    
+    Notes
+    -----
+    - Only processes files with .jpg and .arw extensions (case-insensitive)
+    - Requires JPG filenames to match pattern: YYYY-MM-DD_*
+    - Logs warnings for files not in correct format
+    - Year is extracted from date string (first 4 characters)
+    
+    Examples
+    --------
+    >>> jpg_files, arw_files = collect_jpg_and_raw_files()
+    >>> print(len(jpg_files), "JPG files found")
+    150 JPG files found
+    >>> print(list(jpg_files.keys())[:2])
+    ['2026-09-25_DSC00001', '2026-09-25_DSC00002']
+    
+    See Also
+    --------
+    add_date_to_jpg : Add date prefix to JPG files
+    copy_images : Transfer collected files to media library
+    """
+
     jpg_files = {}  # Map base name to (filepath, filename, date, year)
     arw_files = {}  # Map base name to (filepath, filename)
     
@@ -314,6 +550,64 @@ def collect_jpg_and_raw_files():
 
 
 def copy_images(jpg_files, arw_files):
+    """
+    Copy JPG and ARW files to organized media library structure.
+    
+    Transfers collected JPG and ARW files to the media library organized
+    by year and camera type. Creates necessary folder structure and verifies
+    each file after transfer.
+    
+    JPGs are copied to: {TIMELINE_BASE}/{year}/Sony/
+    ARWs are copied to: {TIMELINE_BASE}/{year}/Sony/raw/
+    
+    Parameters
+    ----------
+    jpg_files : dict
+        Dictionary mapping base_name to (filepath, filename, date_str, year)
+        from collect_jpg_and_raw_files()
+    arw_files : dict
+        Dictionary mapping base_name to (filepath, filename)
+        from collect_jpg_and_raw_files()
+    
+    Returns
+    -------
+    tuple
+        A tuple of (files_to_delete, failed_transfers, successful_transfers):
+        
+        - **files_to_delete** (list): File paths marked for deletion
+        - **failed_transfers** (int): Count of failed transfers
+        - **successful_transfers** (int): Count of successful transfers
+    
+    Raises
+    ------
+    None
+        All exceptions are caught and logged as failures.
+    
+    Notes
+    -----
+    - ARWs are matched to JPGs by base filename (suffix extraction)
+    - Missing ARW files are logged as warnings but don't fail the JPG
+    - Destination folders are auto-created if missing
+    - Both JPG and ARW verification must pass to mark for deletion
+    - Returns counts for caller to decide on deletion
+    
+    Examples
+    --------
+    >>> jpg_files = {...}  # from collect_jpg_and_raw_files()
+    >>> arw_files = {...}
+    >>> to_del, fails, success = copy_images(jpg_files, arw_files)
+    >>> print(f"Transferred: {success}, Failed: {fails}")
+    Transferred: 150, Failed: 0
+    >>> if fails == 0:
+    ...     delete_processed_files_locally(to_del)
+    
+    See Also
+    --------
+    collect_jpg_and_raw_files : Prepare files before copying
+    copy_file_with_hash_check : Single file copy with verification
+    delete_processed_files_locally : Clean up after successful transfer
+    """
+
     files_to_delete = []
     successful_transfers = 0
     failed_transfers = 0
@@ -370,6 +664,49 @@ def copy_images(jpg_files, arw_files):
 
 
 def delete_processed_files_locally(files_to_delete):
+    """
+    Delete local files after successful transfer to media library.
+    
+    Removes files from the local source folder after they have been
+    successfully copied and verified on the media library.
+    
+    Should only be called after all transfers have completed successfully
+    (failed_transfers == 0).
+    
+    Parameters
+    ----------
+    files_to_delete : list of str
+        Absolute file paths to delete. Typically from copy_images()
+    
+    Returns
+    -------
+    None
+    
+    Raises
+    ------
+    None
+        File deletion errors are logged but do not raise exceptions.
+        Partial deletions will be logged with mixed success/error messages.
+    
+    Notes
+    -----
+    - Logs each deletion as INFO level
+    - Catches and logs individual file errors without stopping
+    - Does NOT verify files before deletion (assumes caller verified)
+    - This is the FINAL STEP - use with caution
+    
+    Examples
+    --------
+    >>> files_to_delete = ['/local/photo1.jpg', '/local/photo1.arw']
+    >>> delete_processed_files_locally(files_to_delete)
+    INFO - Deleted: photo1.jpg
+    INFO - Deleted: photo1.arw
+    
+    See Also
+    --------
+    copy_images : Returns files_to_delete list
+    """
+
     for filepath in files_to_delete:
         try:
             os.remove(filepath)

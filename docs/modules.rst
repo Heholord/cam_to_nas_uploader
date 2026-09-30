@@ -4,7 +4,7 @@ API Reference
 Photo Transfer Module
 ---------------------
 
-.. automodule:: upload_to_nas
+.. automodule:: photo_transfer
    :members:
    :undoc-members:
    :show-inheritance:

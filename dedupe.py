@@ -36,7 +36,7 @@ Example:
     
     # After reviewing log, uncomment lines 90-93 to actually delete files
 
-Author: Claude
+Author: Manuel Esberger (with help from Claude)
 Version: 1.0
 """
 
